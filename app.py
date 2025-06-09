@@ -4,7 +4,7 @@ import pandas as pd
 st.set_page_config(page_title="Тест с повтором ошибок", layout="centered")
 st.title("🧠 Тестирование с ручным переходом")
 
-# 🔁 Кнопка сброса состояния
+# 🔄 Сброс
 st.markdown("### 🔄 Управление")
 if st.button("🔁 Начать заново"):
     for key in list(st.session_state.keys()):
@@ -21,33 +21,56 @@ defaults = {
     "show_result": False,
     "selected_option": None,
     "last_result": None,
-    "current_df": None
+    "current_df": None,
+    "df_full": None
 }
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
-# 📂 Загрузка файла
-uploaded_file = st.file_uploader("Загрузите файл с вопросами (.xlsx или .csv)", type=["xlsx", "csv"])
+# 📂 Загрузка исходного Excel
+st.markdown("### 📥 Загрузите основной Excel-файл с вопросами:")
+xlsx_file = st.file_uploader("Файл Excel (.xlsx)", type=["xlsx"], key="excel_upload")
 
-if uploaded_file:
+if xlsx_file:
     try:
-        if uploaded_file.name.endswith(".csv"):
-            df_full = pd.read_csv(uploaded_file)
-        else:
-            df_full = pd.read_excel(uploaded_file, sheet_name="Sheet1")
+        df_full = pd.read_excel(xlsx_file, sheet_name="Sheet1")
         df_full = df_full.dropna(subset=["Вопрос", "Правильный ответ"])
+        st.session_state.df_full = df_full
+        if st.session_state.current_df is None:
+            st.session_state.current_df = df_full.copy()
     except Exception as e:
-        st.error(f"Ошибка при чтении файла: {e}")
+        st.error(f"Ошибка при чтении Excel: {e}")
         st.stop()
 
-    with st.expander("📄 Просмотр загруженных данных"):
-        st.dataframe(df_full)
+# 📂 Загрузка CSV с ошибками (индексы)
+if st.session_state.df_full is not None:
+    st.markdown("### 📥 Загрузите CSV-файл с ошибками (необязательно):")
+    csv_file = st.file_uploader("Файл CSV (.csv)", type=["csv"], key="csv_upload")
+    if csv_file:
+        try:
+            df_csv = pd.read_csv(csv_file)
+            if "Индекс" not in df_csv.columns:
+                st.warning("CSV должен содержать колонку 'Индекс'.")
+            else:
+                retry_df = st.session_state.df_full.loc[df_csv["Индекс"]].reset_index(drop=True)
+                st.session_state.mode = "retry_wrong"
+                st.session_state.step = 0
+                st.session_state.score = 0
+                st.session_state.show_result = False
+                st.session_state.finished = False
+                st.session_state.answers = []
+                st.session_state.current_df = retry_df
+                st.success("🔁 Загружен CSV с ошибками. Начинаем повтор.")
+                st.rerun()
+        except Exception as e:
+            st.error(f"Ошибка при чтении CSV: {e}")
 
-    if st.session_state.current_df is None:
-        st.session_state.current_df = df_full.copy()
+# 🧪 Тестирование
+df = st.session_state.current_df
+df_full = st.session_state.df_full
 
-    df = st.session_state.current_df
+if df is not None and len(df) > 0:
     total_questions = len(df)
     current_step = st.session_state.step
 
@@ -119,38 +142,31 @@ if uploaded_file:
                 st.rerun()
 
             if st.session_state.last_result:
-                st.markdown("✅ **Верно!**", unsafe_allow_html=True)
+                st.markdown("✅ **Верно!**")
             else:
-                st.markdown(f"❌ **Неверно. Правильный ответ: {correct_answer}**", unsafe_allow_html=True)
+                st.markdown(f"❌ **Неверно. Правильный ответ: {correct_answer}**")
 
-    if current_step >= total_questions and not st.session_state.finished:
+    elif not st.session_state.finished:
         st.session_state.finished = True
         st.success(f"✅ Этап завершён! Правильных ответов: {st.session_state.score} из {total_questions}")
 
         wrong_df = pd.DataFrame(st.session_state.answers)
         wrong_df = wrong_df[wrong_df["Результат"] != "✅ Верно"]
-        wrong_indices = wrong_df["Индекс"].tolist()
-        retry_df = df_full.loc[wrong_indices]
-
-        if len(retry_df) > 0:
-            st.warning(f"⚠️ Остались ошибки: {len(retry_df)}. Повторить только их?")
-
-            st.download_button(
-                "⬇️ Скачать ошибки (CSV)",
-                data=retry_df.to_csv(index=False).encode("utf-8"),
-                file_name="ошибки_для_повтора.csv",
-                mime="text/csv"
-            )
-
+        if len(wrong_df) > 0:
+            st.warning(f"⚠️ Остались ошибки: {len(wrong_df)}. Повторить только их?")
             if st.button("🔁 Повторить ошибки"):
+                retry_df = df_full.loc[wrong_df["Индекс"]].reset_index(drop=True)
                 st.session_state.mode = "retry_wrong"
                 st.session_state.step = 0
                 st.session_state.score = 0
                 st.session_state.show_result = False
                 st.session_state.finished = False
                 st.session_state.answers = []
-                st.session_state.current_df = retry_df.reset_index(drop=True)
+                st.session_state.current_df = retry_df
                 st.rerun()
+            # 💾 Скачивание CSV
+            csv_data = wrong_df[["Индекс"]].to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Скачать CSV с ошибками", data=csv_data, file_name="ошибки.csv", mime="text/csv")
         else:
             st.balloons()
             st.success("🎉 Все вопросы пройдены правильно!")
@@ -160,4 +176,4 @@ if uploaded_file:
             df_result = pd.DataFrame(st.session_state.answers)
             st.dataframe(df_result[["Режим", "Вопрос", "Вы выбрали", "Правильный ответ", "Результат"]])
 else:
-    st.info("👆 Загрузите Excel или CSV-файл с вопросами.")
+    st.info("👆 Сначала загрузите Excel-файл с вопросами.")
