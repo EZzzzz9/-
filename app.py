@@ -3,7 +3,7 @@ import pandas as pd
 from io import StringIO
 
 st.set_page_config(page_title="Тест с повтором ошибок", layout="centered")
-st.title("🧠 Тестирование с повтором ошибок")
+st.title("🧠 Тестирование")
 
 # Кнопка сброса
 if st.button("🔁 Начать заново"):
