@@ -142,24 +142,9 @@ if xlsx_file:
 
         # 📥 Скачивание ошибок
         if not wrong_df.empty:
+            st.markdown("📎 Чтобы повторно пройти только ошибочные вопросы, загрузите этот файл вместе с Excel-файлом при следующем запуске:")
             csv_bytes = wrong_df.to_csv(index=False).encode("utf-8")
             st.download_button("📥 Скачать ошибки (CSV)", data=csv_bytes, file_name="ошибки.csv", mime="text/csv")
-
-            if st.button("🔁 Повторить ошибки"):
-                retry_df = st.session_state.full_df[
-                    st.session_state.full_df["Вопрос"].isin(wrong_df["Вопрос"])
-                ].reset_index(drop=True)
-
-                st.session_state.update({
-                    "mode": "retry_wrong",
-                    "current_df": retry_df,
-                    "step": 0,
-                    "score": 0,
-                    "answers": [],
-                    "show_result": False,
-                    "finished": False
-                })
-                st.rerun()
         else:
             st.balloons()
             st.success("🎉 Все вопросы пройдены правильно!")
