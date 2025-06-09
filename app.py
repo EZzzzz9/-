@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import random
 
 st.set_page_config(page_title="Тест с повтором ошибок", layout="centered")
 st.title("🧠 Тестирование с ручным переходом")
@@ -18,7 +17,7 @@ csv_file = st.file_uploader("🔄 (Необязательно) Загрузит�
 
 # 🧠 Инициализация состояния
 defaults = {
-    "mode": None,
+    "mode": "full_test",
     "step": 0,
     "score": 0,
     "answers": [],
@@ -29,67 +28,80 @@ defaults = {
     "current_df": None,
     "full_df": None,
     "csv_loaded": False,
-    "random_selected": False
 }
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
-# ✅ Обработка Excel-файла
 if xlsx_file:
     try:
         df_full = pd.read_excel(xlsx_file, sheet_name=0)
-        df_full = df_full.dropna(subset=["Вопрос", "Правильный ответ"])
+        df_full = df_full.dropna(subset=["Вопрос", "Правильный ответ"]).reset_index(drop=True)
         st.session_state.full_df = df_full
     except Exception as e:
         st.error(f"Ошибка при чтении Excel-файла: {e}")
         st.stop()
 
-    # 🟡 Обработка CSV — только при первом загрузочном проходе
+    # Кнопки выбора режима, если CSV не загружен или не обработан
+    if not st.session_state.csv_loaded:
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Весь тест"):
+                st.session_state.current_df = st.session_state.full_df.copy()
+                st.session_state.mode = "full_test"
+                st.session_state.step = 0
+                st.session_state.score = 0
+                st.session_state.answers = []
+                st.session_state.show_result = False
+                st.session_state.finished = False
+                st.session_state.csv_loaded = False
+                st.rerun()
+        with col2:
+            if len(st.session_state.full_df) >= 80:
+                if st.button("80 случайных вопросов"):
+                    df_sample = st.session_state.full_df.sample(n=80, random_state=None).reset_index(drop=True)
+                    st.session_state.current_df = df_sample
+                    st.session_state.mode = "random_80"
+                    st.session_state.step = 0
+                    st.session_state.score = 0
+                    st.session_state.answers = []
+                    st.session_state.show_result = False
+                    st.session_state.finished = False
+                    st.session_state.csv_loaded = False
+                    st.rerun()
+            else:
+                st.info("В файле меньше 80 вопросов, выберите весь тест.")
+
+    # Если загружен CSV с ошибками — фильтруем вопросы
     if csv_file and not st.session_state.csv_loaded:
         try:
             df_csv = pd.read_csv(csv_file)
-            df_wrong = df_csv[df_csv["Результат"] == "❌ Неверно"]
-            filtered_df = df_full[df_full["Вопрос"].isin(df_wrong["Вопрос"])].reset_index(drop=True)
+            df_csv_wrong = df_csv[df_csv["Результат"] == "❌ Неверно"]
+            filtered_df = st.session_state.full_df[
+                st.session_state.full_df["Вопрос"].isin(df_csv_wrong["Вопрос"])
+            ].reset_index(drop=True)
 
-            st.session_state.update({
-                "mode": "retry_csv",
-                "current_df": filtered_df,
-                "step": 0,
-                "score": 0,
-                "answers": [],
-                "show_result": False,
-                "finished": False,
-                "csv_loaded": True,
-                "random_selected": False
-            })
-            st.success("Загружен CSV. Начинается повторный тест по ошибкам.")
-            st.experimental_rerun()
+            if filtered_df.empty:
+                st.warning("Нет вопросов с ошибками из CSV в Excel-файле.")
+            else:
+                st.session_state.current_df = filtered_df
+                st.session_state.mode = "retry_csv"
+                st.session_state.step = 0
+                st.session_state.score = 0
+                st.session_state.answers = []
+                st.session_state.show_result = False
+                st.session_state.finished = False
+                st.session_state.csv_loaded = True
+                st.success("Загружен CSV. Начинается повторный тест по ошибкам.")
+                st.rerun()
         except Exception as e:
             st.error(f"Ошибка при чтении CSV: {e}")
             st.stop()
 
-    # 🔘 Выбор режима (если CSV не выбран)
-    if st.session_state.current_df is None and not csv_file:
-        st.markdown("### 📋 Выберите режим теста:")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🧪 Весь тест"):
-                st.session_state.current_df = df_full.copy().reset_index(drop=True)
-                st.session_state.mode = "full_test"
-                st.session_state.csv_loaded = False
-                st.experimental_rerun()
-        with col2:
-            if st.button("🎲 80 случайных вопросов"):
-                df_sample = df_full.sample(n=80).reset_index(drop=True)
-                st.session_state.current_df = df_sample
-                st.session_state.mode = "random_80"
-                st.session_state.csv_loaded = False
-                st.experimental_rerun()
+    if st.session_state.current_df is None:
+        st.session_state.current_df = st.session_state.full_df.copy()
 
-# 🚀 Основная логика теста
-df = st.session_state.current_df
-if df is not None:
+    df = st.session_state.current_df
     total_questions = len(df)
     current_step = st.session_state.step
 
@@ -104,7 +116,7 @@ if df is not None:
         if relative_index >= total_questions:
             color = "black"
         else:
-            row_index = df.iloc[relative_index].name
+            row_index = df.index[relative_index]
             answer = next((a for a in st.session_state.answers if a["Индекс"] == row_index), None)
             if answer:
                 color = "green" if answer["Результат"] == "✅ Верно" else "red"
@@ -140,9 +152,7 @@ if df is not None:
                 st.session_state.selected_option = selected_letter
                 st.session_state.last_result = is_correct
                 st.session_state.answers.append({
-                    "Режим": "Полный тест" if st.session_state.mode == "full_test" else
-                             "Случайные 80" if st.session_state.mode == "random_80" else
-                             "Ошибки из CSV",
+                    "Режим": "Основной" if st.session_state.mode in ["full_test", "random_80"] else "Повтор ошибок",
                     "Индекс": row.name,
                     "Вопрос": row["Вопрос"],
                     "Вы выбрали": selected_letter,
@@ -152,14 +162,14 @@ if df is not None:
                 if is_correct:
                     st.session_state.score += 1
                 st.session_state.show_result = True
-                st.experimental_rerun()
+                st.rerun()
         else:
             if st.button("Следующий вопрос"):
                 st.session_state.step += 1
                 st.session_state.show_result = False
                 st.session_state.selected_option = None
                 st.session_state.last_result = None
-                st.experimental_rerun()
+                st.rerun()
 
             if st.session_state.last_result:
                 st.markdown("✅ **Верно!**", unsafe_allow_html=True)
@@ -182,7 +192,7 @@ if df is not None:
                 data=csv_bytes,
                 file_name="ошибки.csv",
                 mime="text/csv",
-                help="Вы можете загрузить этот файл позже, чтобы повторить ошибки."
+                help="Сохраните файл и при следующей загрузке используйте его для прорешивания ошибок"
             )
         else:
             st.balloons()
