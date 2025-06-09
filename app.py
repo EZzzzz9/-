@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(page_title="Тест с повтором ошибок", layout="centered")
-st.title("🧠 Тестирование с ручным переходом")
+st.title("🧠 Тестирование")
 
 # 📂 Загрузка файлов
 xlsx_file = st.file_uploader("Загрузите Excel-файл с вопросами", type=["xlsx"])
