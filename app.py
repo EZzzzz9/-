@@ -4,14 +4,14 @@ import pandas as pd
 st.set_page_config(page_title="Тест с повтором ошибок", layout="centered")
 st.title("🧠 Тестирование с ручным переходом")
 
-# 🔁 Кнопка сброса состояния (внутри основной части)
-st.markdown("### 🔄 Управление")
-if st.button("🔁 Начать заново"):
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
-    st.rerun()
+# 🔄 Сброс состояния
+with st.sidebar:
+    if st.button("🔁 Начать заново"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
 
-# 🧠 Инициализация состояния
+# 🧠 Инициализация session_state
 defaults = {
     "mode": "full_test",
     "step": 0,
@@ -27,7 +27,6 @@ for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
-# 📂 Загрузка файла
 uploaded_file = st.file_uploader("Загрузите Excel-файл с вопросами", type=["xlsx"])
 
 if uploaded_file:
@@ -46,35 +45,29 @@ if uploaded_file:
 
     df = st.session_state.current_df
     total_questions = len(df)
-    current_step = st.session_state.step
 
-    correct_count = sum(1 for a in st.session_state.answers if a["Результат"] == "✅ Верно")
-    wrong_count = sum(1 for a in st.session_state.answers if a["Результат"] == "❌ Неверно")
+    # 🔢 Прогрессбар из 18 HTML-клеток
+    def render_html_progress():
+        progress_html = ""
+        total_cells = 18
+        answered = st.session_state.answers
+        filled_cells = min(len(answered), total_cells)
 
-    # 🔳 HTML прогрессбар (18 клеток)
-    BAR_CELLS = 18
-    html_bar = '<div style="display: flex; gap: 2px;">'
-    for i in range(BAR_CELLS):
-        relative_index = int(i / BAR_CELLS * total_questions)
-        if relative_index >= total_questions:
-            color = "black"
-        else:
-            row_index = df.iloc[relative_index].name
-            answer = next((a for a in st.session_state.answers if a["Индекс"] == row_index), None)
-            if answer:
-                color = "green" if answer["Результат"] == "✅ Верно" else "red"
+        for i in range(total_cells):
+            if i < len(answered):
+                result = answered[i]["Результат"]
+                color = "#4CAF50" if result == "✅ Верно" else "#F44336"
             else:
-                color = "black"
-        html_bar += f'<div style="width: 20px; height: 20px; background-color: {color}; border: 1px solid #555;"></div>'
-    html_bar += '</div>'
+                color = "#333333"
+            progress_html += f'<div style="width: 20px; height: 20px; background-color: {color}; margin: 2px; display: inline-block;"></div>'
+        st.markdown(progress_html, unsafe_allow_html=True)
 
-    st.markdown(f"**Прогресс:** Вопрос {current_step + 1} из {total_questions}")
-    st.markdown(html_bar, unsafe_allow_html=True)
-    st.markdown(f"✅ Правильно: {correct_count} | ❌ Неправильно: {wrong_count} | ⬛ Осталось: {total_questions - (correct_count + wrong_count)}")
+    render_html_progress()
+    mode_label = "Основной тест" if st.session_state.mode == "full_test" else "Повтор ошибок"
+    st.markdown(f"**Режим:** {mode_label} — Вопрос {st.session_state.step + 1} из {total_questions}")
 
-    if current_step < total_questions:
-        row = df.iloc[current_step]
-        st.markdown(f"### Вопрос {current_step + 1} из {total_questions}")
+    if st.session_state.step < total_questions:
+        row = df.iloc[st.session_state.step]
         st.markdown(f"**{row['Вопрос']}**")
 
         options = ['A', 'B', 'C', 'D', 'E', 'F']
@@ -84,46 +77,44 @@ if uploaded_file:
         selected = st.radio(
             "Выберите ответ:",
             [f"{opt}) {text}" for opt, text in valid_options],
-            key=f"q_{st.session_state.mode}_{current_step}"
+            key=f"q_{st.session_state.mode}_{st.session_state.step}"
         )
 
         if not st.session_state.show_result:
             if st.button("Ответить"):
-                selected_letter = selected[0]
-                is_correct = selected_letter == correct_answer
-
-                st.session_state.selected_option = selected_letter
+                st.session_state.selected_option = selected[0]
+                is_correct = st.session_state.selected_option == correct_answer
                 st.session_state.last_result = is_correct
+
                 st.session_state.answers.append({
                     "Режим": "Основной" if st.session_state.mode == "full_test" else "Повтор ошибок",
                     "Индекс": row.name,
                     "Вопрос": row["Вопрос"],
-                    "Вы выбрали": selected_letter,
+                    "Вы выбрали": st.session_state.selected_option,
                     "Правильный ответ": correct_answer,
                     "Результат": "✅ Верно" if is_correct else "❌ Неверно"
                 })
+
                 if is_correct:
                     st.session_state.score += 1
+
                 st.session_state.show_result = True
                 st.rerun()
 
         else:
-            # Показываем кнопку "Следующий вопрос"
+            if st.session_state.last_result:
+                st.success("✅ Верно!")
+            else:
+                st.error(f"❌ Неверно. Правильный ответ: {correct_answer}")
+
             if st.button("Следующий вопрос"):
                 st.session_state.step += 1
-                st.session_state.show_result = False
                 st.session_state.selected_option = None
                 st.session_state.last_result = None
+                st.session_state.show_result = False
                 st.rerun()
 
-            # Показываем результат под кнопкой
-            if st.session_state.last_result:
-                st.markdown("✅ **Верно!**", unsafe_allow_html=True)
-            else:
-                st.markdown(f"❌ **Неверно. Правильный ответ: {correct_answer}**", unsafe_allow_html=True)
-
-    # ✅ Завершение
-    if current_step >= total_questions and not st.session_state.finished:
+    if st.session_state.step >= total_questions and not st.session_state.finished:
         st.session_state.finished = True
         st.success(f"✅ Этап завершён! Правильных ответов: {st.session_state.score} из {total_questions}")
 
@@ -134,6 +125,17 @@ if uploaded_file:
 
         if len(retry_df) > 0:
             st.warning(f"⚠️ Остались ошибки: {len(retry_df)}. Повторить только их?")
+
+            st.download_button(
+                "⬇️ Скачать ошибки (CSV)",
+                data=retry_df.to_csv(index=False).encode("utf-8"),
+                file_name="ошибки_для_повтора.csv",
+                mime="text/csv"
+            )
+
+            if st.session_state.step >= len(retry_df):
+                st.session_state.step = 0  # защита
+
             if st.button("🔁 Повторить ошибки"):
                 st.session_state.mode = "retry_wrong"
                 st.session_state.step = 0
@@ -147,9 +149,14 @@ if uploaded_file:
             st.balloons()
             st.success("🎉 Все вопросы пройдены правильно!")
 
+    # 📊 История ответов
     if st.session_state.answers:
+        df_result = pd.DataFrame(st.session_state.answers)
         with st.expander("📋 История ответов"):
-            df_result = pd.DataFrame(st.session_state.answers)
             st.dataframe(df_result[["Режим", "Вопрос", "Вы выбрали", "Правильный ответ", "Результат"]])
+
+        with st.expander("📈 Статистика"):
+            stat = df_result.groupby("Режим")["Результат"].value_counts().unstack(fill_value=0)
+            st.write(stat)
 else:
     st.info("👆 Загрузите Excel-файл с вопросами.")
