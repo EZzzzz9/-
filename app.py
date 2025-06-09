@@ -5,24 +5,30 @@ import time
 st.set_page_config(page_title="Тестирование с повтором ошибок", layout="centered")
 st.title("🧠 Тестирование с автоповтором ошибок")
 
-# 🔄 Сброс состояния
-if st.button("🔁 Начать заново"):
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
-    st.experimental_rerun()
+# 🔄 Кнопка всегда наверху
+with st.sidebar:
+    if st.button("🔁 Начать заново"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.experimental_rerun()
 
 # 🧠 Инициализация session_state
-if "mode" not in st.session_state:
-    st.session_state.mode = "full_test"  # full_test / retry_wrong
-    st.session_state.step = 0
-    st.session_state.score = 0
-    st.session_state.answers = []
-    st.session_state.finished = False
-    st.session_state.show_result = False
-    st.session_state.selected_option = None
-    st.session_state.last_result = None
-    st.session_state.response_time = None
-    st.session_state.current_df = None  # df, состоящий из текущего этапа (весь тест или ошибки)
+defaults = {
+    "mode": "full_test",
+    "step": 0,
+    "score": 0,
+    "answers": [],
+    "finished": False,
+    "show_result": False,
+    "selected_option": None,
+    "last_result": None,
+    "response_time": None,
+    "auto_advance_time": None,
+    "current_df": None
+}
+for key, val in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = val
 
 # 📂 Загрузка файла
 uploaded_file = st.file_uploader("Загрузите Excel-файл с вопросами", type=["xlsx"])
@@ -38,13 +44,12 @@ if uploaded_file:
     with st.expander("🔍 Просмотр загруженных данных"):
         st.dataframe(df_full)
 
-    # 📄 Формируем начальный набор данных
+    # 📄 Начальный df
     if st.session_state.current_df is None:
         st.session_state.current_df = df_full.copy()
 
     df = st.session_state.current_df
 
-    # ❓ Вывод вопроса
     if st.session_state.step < len(df):
         row = df.iloc[st.session_state.step]
         st.markdown(f"### Вопрос {st.session_state.step + 1} из {len(df)}")
@@ -60,7 +65,7 @@ if uploaded_file:
             key=f"q_{st.session_state.mode}_{st.session_state.step}"
         )
 
-        # 🟢 Ответ
+        # Ответ
         if not st.session_state.show_result:
             if st.button("Ответить"):
                 st.session_state.selected_option = selected[0]
@@ -80,54 +85,53 @@ if uploaded_file:
                     st.session_state.score += 1
 
                 st.session_state.show_result = True
-                st.session_state.response_time = time.time()
+                st.session_state.auto_advance_time = time.time()
 
-        # ✅ Показ результата и автопереход
+        # Результат + автопереход
         if st.session_state.show_result:
             if st.session_state.last_result:
                 st.success("✅ Верно!")
             else:
                 st.error(f"❌ Неверно. Правильный ответ: {correct_answer}")
 
-            if time.time() - st.session_state.response_time >= 1:
+            if time.time() - st.session_state.auto_advance_time >= 1:
                 st.session_state.step += 1
                 st.session_state.show_result = False
-                st.session_state.selected_option = None
-                st.session_state.response_time = None
+                st.session_state.auto_advance_time = None
                 st.experimental_rerun()
 
-    # 🏁 Завершение раунда
+    # 🏁 Завершение этапа
     if st.session_state.step >= len(df) and not st.session_state.finished:
         st.session_state.finished = True
         st.success(f"✅ Этап завершён! Правильных ответов: {st.session_state.score} из {len(df)}")
 
-        # Фильтрация неправильных ответов
+        # Фильтруем ошибки
         wrong_df = pd.DataFrame(st.session_state.answers)
         wrong_df = wrong_df[wrong_df["Результат"] != "✅ Верно"]
         wrong_indices = wrong_df["Индекс"].tolist()
         retry_df = df_full.loc[wrong_indices]
 
         if len(retry_df) > 0:
-            st.warning(f"⚠️ Остались ошибки: {len(retry_df)}. Хотите повторить только их?")
+            st.warning(f"⚠️ Остались ошибки: {len(retry_df)}. Повторить только их?")
 
             if st.button("🔁 Повторить ошибки"):
-                # Сброс состояния
                 st.session_state.mode = "retry_wrong"
                 st.session_state.step = 0
                 st.session_state.score = 0
                 st.session_state.show_result = False
-                st.session_state.selected_option = None
                 st.session_state.finished = False
+                st.session_state.answers = []
                 st.session_state.current_df = retry_df.reset_index(drop=True)
                 st.experimental_rerun()
         else:
             st.balloons()
             st.success("🎉 Все вопросы пройдены правильно! Повторов не требуется.")
 
-    # 📊 История
+    # История
     if st.session_state.answers:
         with st.expander("📋 История ответов"):
             df_result = pd.DataFrame(st.session_state.answers)
             st.dataframe(df_result[["Режим", "Вопрос", "Вы выбрали", "Правильный ответ", "Результат"]])
+
 else:
     st.info("👆 Загрузите Excel-файл с вопросами, чтобы начать.")
