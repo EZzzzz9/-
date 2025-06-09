@@ -48,13 +48,7 @@ if uploaded_file:
 
     if st.session_state.step < len(df):
         row = df.iloc[st.session_state.step]
-        total = len(df)
-        current = st.session_state.step + 1
-        progress_percent = int(current / total * 100)
-
-        st.markdown(f"### Вопрос {current} из {total}")
-        st.progress(progress_percent)
-
+        st.markdown(f"### Вопрос {st.session_state.step + 1} из {len(df)}")
         st.markdown(f"**{row['Вопрос']}**")
 
         options = ['A', 'B', 'C', 'D', 'E', 'F']
