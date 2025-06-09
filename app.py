@@ -1,150 +1,178 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Повтор по ошибкам", layout="centered")
-st.title("📘 Повторное тестирование по ошибкам")
+st.set_page_config(page_title="Тест с повтором ошибок", layout="centered")
+st.title("🧠 Тестирование с ручным переходом")
 
-# 🔁 Кнопка сброса
+# 🔄 Сброс состояния
+st.markdown("### 🔄 Управление")
 if st.button("🔁 Начать заново"):
-    for k in list(st.session_state.keys()):
-        del st.session_state[k]
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
     st.rerun()
 
-# 🧠 Состояния
+# 🧠 Инициализация session_state
 defaults = {
+    "mode": "full_test",
     "step": 0,
     "score": 0,
     "answers": [],
+    "finished": False,
     "show_result": False,
     "selected_option": None,
     "last_result": None,
-    "current_df": None,
-    "df_full": None,
+    "current_df": None
 }
-for k, v in defaults.items():
-    if k not in st.session_state:
-        st.session_state[k] = v
+for key, val in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = val
 
-# Загрузка Excel
-st.markdown("### 📘 Загрузите Excel-файл с полными вопросами")
-xlsx_file = st.file_uploader("Excel (.xlsx)", type=["xlsx"], key="xlsx")
+# 📂 Загрузка Excel
+uploaded_excel = st.file_uploader("Загрузите Excel-файл с вопросами", type=["xlsx"])
 
-# Загрузка CSV
-st.markdown("### 📄 Загрузите CSV-файл с ошибками")
-csv_file = st.file_uploader("CSV (.csv)", type=["csv"], key="csv")
+# 📂 Загрузка CSV
+uploaded_csv = st.file_uploader("(Необязательно) Загрузите CSV-файл с ошибками", type=["csv"])
 
-if xlsx_file:
+df_full = None
+
+if uploaded_excel:
     try:
-        df_full = pd.read_excel(xlsx_file)
+        df_full = pd.read_excel(uploaded_excel, sheet_name="Sheet1")
         df_full = df_full.dropna(subset=["Вопрос", "Правильный ответ"])
-        df_full["Вопрос_норм"] = df_full["Вопрос"].astype(str).str.strip().str.lower()
-        st.session_state.df_full = df_full
-        st.success("✅ Excel-файл загружен")
+        with st.expander("📄 Просмотр загруженных данных"):
+            st.dataframe(df_full)
     except Exception as e:
-        st.error(f"Ошибка чтения Excel: {e}")
+        st.error(f"Ошибка при чтении Excel: {e}")
         st.stop()
 
-if csv_file and st.session_state.df_full is not None:
+elif uploaded_csv:
     try:
-        df_csv = pd.read_csv(csv_file, encoding="utf-8")
-        df_csv.columns = [col.strip().lower() for col in df_csv.columns]  # Приведение к нижнему регистру
-
-        if "вопрос" not in df_csv.columns:
-            st.error("CSV должен содержать колонку 'Вопрос'")
+        csv_df = pd.read_csv(uploaded_csv)
+        if all(col in csv_df.columns for col in ["Вопрос", "Вы выбрали", "Правильный ответ", "Результат"]):
+            df_full = csv_df[["Вопрос", "Правильный ответ"]].drop_duplicates().reset_index(drop=True)
+            for opt in ['A', 'B', 'C', 'D', 'E', 'F']:
+                df_full[opt] = None  # Ответы недоступны в CSV
+            with st.expander("📄 Загружен CSV без структуры вариантов ответов"):
+                st.dataframe(df_full)
+        else:
+            st.warning("CSV-файл должен содержать колонки: Вопрос, Вы выбрали, Правильный ответ, Результат")
             st.stop()
-
-        df_csv["вопрос_норм"] = df_csv["вопрос"].astype(str).str.strip().str.lower()
-        df_full = st.session_state.df_full
-        df_full["Вопрос_норм"] = df_full["Вопрос"].astype(str).str.strip().str.lower()
-
-        df_matched = df_full[df_full["Вопрос_норм"].isin(df_csv["вопрос_норм"])]
-        if df_matched.empty:
-            st.warning("❌ Ни один вопрос из CSV не найден в Excel.")
-            st.stop()
-
-        st.session_state.current_df = df_matched.reset_index(drop=True)
-        st.success(f"✅ Найдено {len(df_matched)} вопросов по ошибкам")
     except Exception as e:
-        st.error(f"Ошибка чтения CSV: {e}")
+        st.error(f"Ошибка при чтении CSV: {e}")
         st.stop()
 
-# Тестирование
-df = st.session_state.current_df
-if df is not None and not df.empty:
-    step = st.session_state.step
-    total = len(df)
+if df_full is not None:
 
-    st.markdown(f"**Прогресс:** Вопрос {step+1} из {total}")
+    if st.session_state.current_df is None:
+        st.session_state.current_df = df_full.copy()
 
-    # 🔳 Прогрессбар
+    df = st.session_state.current_df
+    total_questions = len(df)
+    current_step = st.session_state.step
+
+    correct_count = sum(1 for a in st.session_state.answers if a["Результат"] == "✅ Верно")
+    wrong_count = sum(1 for a in st.session_state.answers if a["Результат"] == "❌ Неверно")
+
+    # 🔳 Прогресс из 18 HTML-клеток
     BAR_CELLS = 18
-    bar_html = '<div style="display: flex; gap: 2px;">'
+    html_bar = '<div style="display: flex; gap: 2px;">'
     for i in range(BAR_CELLS):
-        rel_idx = int(i / BAR_CELLS * total)
-        if rel_idx >= total:
+        relative_index = int(i / BAR_CELLS * total_questions)
+        if relative_index >= total_questions:
             color = "black"
         else:
-            q_index = df.iloc[rel_idx].name
-            a = next((x for x in st.session_state.answers if x["Индекс"] == q_index), None)
-            color = "green" if a and a["Результат"] == "✅ Верно" else "red" if a else "black"
-        bar_html += f'<div style="width:20px;height:20px;background-color:{color};border:1px solid #555;"></div>'
-    bar_html += "</div>"
-    st.markdown(bar_html, unsafe_allow_html=True)
+            row_index = df.iloc[relative_index].name
+            answer = next((a for a in st.session_state.answers if a["Индекс"] == row_index), None)
+            if answer:
+                color = "green" if answer["Результат"] == "✅ Верно" else "red"
+            else:
+                color = "black"
+        html_bar += f'<div style="width: 20px; height: 20px; background-color: {color}; border: 1px solid #555;"></div>'
+    html_bar += '</div>'
 
-    # Статистика
-    correct = sum(1 for a in st.session_state.answers if a["Результат"] == "✅ Верно")
-    wrong = sum(1 for a in st.session_state.answers if a["Результат"] == "❌ Неверно")
-    st.markdown(f"✅ Правильно: {correct} | ❌ Неправильно: {wrong} | ⬛ Осталось: {total - (correct + wrong)}")
+    st.markdown(f"**Прогресс:** Вопрос {current_step + 1} из {total_questions}")
+    st.markdown(html_bar, unsafe_allow_html=True)
+    st.markdown(f"✅ Правильно: {correct_count} | ❌ Неправильно: {wrong_count} | ⬛ Осталось: {total_questions - (correct_count + wrong_count)}")
 
-    # Вопрос
-    if step < total:
-        row = df.iloc[step]
-        st.markdown(f"### {row['Вопрос']}")
+    if current_step < total_questions:
+        row = df.iloc[current_step]
+        st.markdown(f"### Вопрос {current_step + 1} из {total_questions}")
+        st.markdown(f"**{row['Вопрос']}**")
 
         options = ['A', 'B', 'C', 'D', 'E', 'F']
         valid_options = [(opt, str(row.get(opt))) for opt in options if pd.notna(row.get(opt))]
         correct_answer = str(row['Правильный ответ']).strip().upper()
 
-        selected = st.radio(
-            "Выберите ответ:",
-            [f"{opt}) {text}" for opt, text in valid_options],
-            key=f"q_{step}"
-        )
+        if valid_options:
+            selected = st.radio(
+                "Выберите ответ:",
+                [f"{opt}) {text}" for opt, text in valid_options],
+                key=f"q_{st.session_state.mode}_{current_step}"
+            )
 
-        if not st.session_state.show_result:
-            if st.button("Ответить"):
-                letter = selected[0]
-                is_correct = letter == correct_answer
-                st.session_state.answers.append({
-                    "Индекс": row.name,
-                    "Вопрос": row["Вопрос"],
-                    "Вы выбрали": letter,
-                    "Правильный ответ": correct_answer,
-                    "Результат": "✅ Верно" if is_correct else "❌ Неверно"
-                })
-                if is_correct:
-                    st.session_state.score += 1
-                st.session_state.last_result = is_correct
-                st.session_state.show_result = True
+            if not st.session_state.show_result:
+                if st.button("Ответить"):
+                    selected_letter = selected[0]
+                    is_correct = selected_letter == correct_answer
+
+                    st.session_state.selected_option = selected_letter
+                    st.session_state.last_result = is_correct
+                    st.session_state.answers.append({
+                        "Режим": "Основной" if st.session_state.mode == "full_test" else "Повтор ошибок",
+                        "Индекс": row.name,
+                        "Вопрос": row["Вопрос"],
+                        "Вы выбрали": selected_letter,
+                        "Правильный ответ": correct_answer,
+                        "Результат": "✅ Верно" if is_correct else "❌ Неверно"
+                    })
+                    if is_correct:
+                        st.session_state.score += 1
+                    st.session_state.show_result = True
+                    st.rerun()
+            else:
+                if st.button("Следующий вопрос"):
+                    st.session_state.step += 1
+                    st.session_state.show_result = False
+                    st.session_state.selected_option = None
+                    st.session_state.last_result = None
+                    st.rerun()
+
+                if st.session_state.last_result:
+                    st.markdown("✅ **Верно!**")
+                else:
+                    st.markdown(f"❌ **Неверно. Правильный ответ: {correct_answer}**")
+        else:
+            st.warning("⚠️ Варианты ответов не загружены (только текст вопроса и правильный ответ).")
+
+    # ✅ Завершение
+    if current_step >= total_questions and not st.session_state.finished:
+        st.session_state.finished = True
+        st.success(f"✅ Этап завершён! Правильных ответов: {st.session_state.score} из {total_questions}")
+
+        wrong_df = pd.DataFrame(st.session_state.answers)
+        wrong_df = wrong_df[wrong_df["Результат"] != "✅ Верно"]
+        wrong_indices = wrong_df["Индекс"].tolist()
+        retry_df = df_full.loc[wrong_indices]
+
+        if len(retry_df) > 0:
+            st.warning(f"⚠️ Остались ошибки: {len(retry_df)}. Повторить только их?")
+            if st.button("🔁 Повторить ошибки"):
+                st.session_state.mode = "retry_wrong"
+                st.session_state.step = 0
+                st.session_state.score = 0
+                st.session_state.show_result = False
+                st.session_state.finished = False
+                st.session_state.answers = []
+                st.session_state.current_df = retry_df.reset_index(drop=True)
                 st.rerun()
         else:
-            if st.button("Следующий вопрос"):
-                st.session_state.step += 1
-                st.session_state.show_result = False
-                st.session_state.last_result = None
-                st.rerun()
+            st.balloons()
+            st.success("🎉 Все вопросы пройдены правильно!")
 
-            if st.session_state.last_result:
-                st.markdown("✅ **Верно!**")
-            else:
-                st.markdown(f"❌ **Неверно. Правильный ответ: {correct_answer}**")
-
-    else:
-        st.success("🎉 Повторное тестирование завершено.")
-        st.markdown(f"**Правильных ответов: {st.session_state.score} из {total}**")
-
+    # 📋 История
+    if st.session_state.answers:
         with st.expander("📋 История ответов"):
             df_result = pd.DataFrame(st.session_state.answers)
-            st.dataframe(df_result[["Вопрос", "Вы выбрали", "Правильный ответ", "Результат"]])
+            st.dataframe(df_result[["Режим", "Вопрос", "Вы выбрали", "Правильный ответ", "Результат"]])
 else:
-    st.info("📂 Загрузите оба файла (xlsx + csv), чтобы начать.")
+    st.info("👆 Загрузите Excel или CSV-файл для начала тестирования.")
