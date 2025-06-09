@@ -4,12 +4,11 @@ import pandas as pd
 st.set_page_config(page_title="Тест с повтором ошибок", layout="centered")
 st.title("🧠 Тестирование с ручным переходом")
 
-# 🔄 Кнопка сброса состояния
-with st.sidebar:
-    if st.button("🔁 Начать заново"):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.rerun()  # ✅ обновлено
+# 🔁 Кнопка сброса состояния (всегда сверху)
+if st.button("🔁 Начать заново"):
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.rerun()
 
 # 🧠 Инициализация session_state
 defaults = {
@@ -45,16 +44,29 @@ if uploaded_file:
         st.session_state.current_df = df_full.copy()
 
     df = st.session_state.current_df
+    total_questions = len(df)
+    current_step = st.session_state.step
 
-    if st.session_state.step < len(df):
-        row = df.iloc[st.session_state.step]
-        total = len(df)
-        current = st.session_state.step + 1
-        percent = int((current / total) * 100)
+    # 🧮 Подсчёт правильных/неправильных
+    correct_count = sum(1 for a in st.session_state.answers if a["Результат"] == "✅ Верно")
+    wrong_count = sum(1 for a in st.session_state.answers if a["Результат"] == "❌ Неверно")
 
-        st.markdown(f"### Вопрос {current} из {total}")
-        st.progress(percent)  # ✅ добавлен прогрессбар
+    # 📊 Прогрессбар символами с цветом
+    progress_bar = ""
+    for i in range(total_questions):
+        answer = next((a for a in st.session_state.answers if a["Индекс"] == df.iloc[i].name), None)
+        if answer:
+            progress_bar += "🟩" if answer["Результат"] == "✅ Верно" else "🟥"
+        else:
+            progress_bar += "⬛"
+    st.markdown(f"**Прогресс:** Вопрос {current_step + 1} из {total_questions}")
+    st.markdown(progress_bar)
+    st.markdown(f"✅ Правильно: {correct_count} | ❌ Неправильно: {wrong_count} | ⬛ Осталось: {total_questions - (correct_count + wrong_count)}")
 
+    # 📌 Отображение текущего вопроса
+    if current_step < total_questions:
+        row = df.iloc[current_step]
+        st.markdown(f"### Вопрос {current_step + 1} из {total_questions}")
         st.markdown(f"**{row['Вопрос']}**")
 
         options = ['A', 'B', 'C', 'D', 'E', 'F']
@@ -64,7 +76,7 @@ if uploaded_file:
         selected = st.radio(
             "Выберите ответ:",
             [f"{opt}) {text}" for opt, text in valid_options],
-            key=f"q_{st.session_state.mode}_{st.session_state.step}"
+            key=f"q_{st.session_state.mode}_{current_step}"
         )
 
         # Кнопка: сначала Ответить, потом Следующий
@@ -87,27 +99,25 @@ if uploaded_file:
                     st.session_state.score += 1
 
                 st.session_state.show_result = True
-                st.rerun()  # ✅ обновлено
+                st.rerun()
 
         else:
-            # Показ результата
             if st.session_state.last_result:
                 st.success("✅ Верно!")
             else:
                 st.error(f"❌ Неверно. Правильный ответ: {correct_answer}")
 
-            # Кнопка "Следующий вопрос"
             if st.button("Следующий вопрос"):
                 st.session_state.step += 1
                 st.session_state.show_result = False
                 st.session_state.selected_option = None
                 st.session_state.last_result = None
-                st.rerun()  # ✅ обновлено
+                st.rerun()
 
     # ✅ Завершение
-    if st.session_state.step >= len(df) and not st.session_state.finished:
+    if current_step >= total_questions and not st.session_state.finished:
         st.session_state.finished = True
-        st.success(f"✅ Этап завершён! Правильных ответов: {st.session_state.score} из {len(df)}")
+        st.success(f"✅ Этап завершён! Правильных ответов: {st.session_state.score} из {total_questions}")
 
         # Повтор неправильных
         wrong_df = pd.DataFrame(st.session_state.answers)
@@ -126,12 +136,12 @@ if uploaded_file:
                 st.session_state.finished = False
                 st.session_state.answers = []
                 st.session_state.current_df = retry_df.reset_index(drop=True)
-                st.rerun()  # ✅ обновлено
+                st.rerun()
         else:
             st.balloons()
             st.success("🎉 Все вопросы пройдены правильно!")
 
-    # 📊 История
+    # 📋 История
     if st.session_state.answers:
         with st.expander("📋 История ответов"):
             df_result = pd.DataFrame(st.session_state.answers)
