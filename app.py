@@ -4,12 +4,12 @@ import pandas as pd
 st.set_page_config(page_title="Тест с повтором ошибок", layout="centered")
 st.title("🧠 Тестирование с ручным переходом")
 
-# 🔁 Кнопка сброса состояния (перенесена внутрь страницы)
+# 🔁 Кнопка сброса состояния (внутри основной части)
 st.markdown("### 🔄 Управление")
 if st.button("🔁 Начать заново"):
     for key in list(st.session_state.keys()):
         del st.session_state[key]
-    st.experimental_rerun()
+    st.rerun()
 
 # 🧠 Инициализация состояния
 defaults = {
@@ -108,11 +108,7 @@ if uploaded_file:
                 st.rerun()
 
         else:
-            if st.session_state.last_result:
-                st.success("✅ Верно!")
-            else:
-                st.error(f"❌ Неверно. Правильный ответ: {correct_answer}")
-
+            # Показываем кнопку "Следующий вопрос"
             if st.button("Следующий вопрос"):
                 st.session_state.step += 1
                 st.session_state.show_result = False
@@ -120,7 +116,13 @@ if uploaded_file:
                 st.session_state.last_result = None
                 st.rerun()
 
-    # ✅ Завершение этапа
+            # Показываем результат под кнопкой
+            if st.session_state.last_result:
+                st.markdown("✅ **Верно!**", unsafe_allow_html=True)
+            else:
+                st.markdown(f"❌ **Неверно. Правильный ответ: {correct_answer}**", unsafe_allow_html=True)
+
+    # ✅ Завершение
     if current_step >= total_questions and not st.session_state.finished:
         st.session_state.finished = True
         st.success(f"✅ Этап завершён! Правильных ответов: {st.session_state.score} из {total_questions}")
