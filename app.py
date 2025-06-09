@@ -4,14 +4,14 @@ import pandas as pd
 st.set_page_config(page_title="Тест с повтором ошибок", layout="centered")
 st.title("🧠 Тестирование с ручным переходом")
 
-# 🔁 Кнопка сброса состояния
-with st.sidebar:
-    if st.button("🔁 Начать заново"):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.experimental_rerun()
+# 🔁 Кнопка сброса состояния (перенесена внутрь страницы)
+st.markdown("### 🔄 Управление")
+if st.button("🔁 Начать заново"):
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.experimental_rerun()
 
-# 🧠 Инициализация session_state
+# 🧠 Инициализация состояния
 defaults = {
     "mode": "full_test",
     "step": 0,
@@ -48,15 +48,13 @@ if uploaded_file:
     total_questions = len(df)
     current_step = st.session_state.step
 
-    # 📊 Подсчёт правильных/неправильных
     correct_count = sum(1 for a in st.session_state.answers if a["Результат"] == "✅ Верно")
     wrong_count = sum(1 for a in st.session_state.answers if a["Результат"] == "❌ Неверно")
 
-    # 🔲 HTML-прогрессбар на 18 клеток
+    # 🔳 HTML прогрессбар (18 клеток)
     BAR_CELLS = 18
     html_bar = '<div style="display: flex; gap: 2px;">'
     for i in range(BAR_CELLS):
-        # Определим, какой вопрос соответствует этой клетке
         relative_index = int(i / BAR_CELLS * total_questions)
         if relative_index >= total_questions:
             color = "black"
@@ -69,7 +67,8 @@ if uploaded_file:
                 color = "black"
         html_bar += f'<div style="width: 20px; height: 20px; background-color: {color}; border: 1px solid #555;"></div>'
     html_bar += '</div>'
-    st.markdown(f"**Прогресс:** Вопрос {current_step + 1} из {total_questions}", unsafe_allow_html=True)
+
+    st.markdown(f"**Прогресс:** Вопрос {current_step + 1} из {total_questions}")
     st.markdown(html_bar, unsafe_allow_html=True)
     st.markdown(f"✅ Правильно: {correct_count} | ❌ Неправильно: {wrong_count} | ⬛ Осталось: {total_questions - (correct_count + wrong_count)}")
 
@@ -90,24 +89,24 @@ if uploaded_file:
 
         if not st.session_state.show_result:
             if st.button("Ответить"):
-                st.session_state.selected_option = selected[0]
-                is_correct = st.session_state.selected_option == correct_answer
-                st.session_state.last_result = is_correct
+                selected_letter = selected[0]
+                is_correct = selected_letter == correct_answer
 
+                st.session_state.selected_option = selected_letter
+                st.session_state.last_result = is_correct
                 st.session_state.answers.append({
                     "Режим": "Основной" if st.session_state.mode == "full_test" else "Повтор ошибок",
                     "Индекс": row.name,
                     "Вопрос": row["Вопрос"],
-                    "Вы выбрали": st.session_state.selected_option,
+                    "Вы выбрали": selected_letter,
                     "Правильный ответ": correct_answer,
                     "Результат": "✅ Верно" if is_correct else "❌ Неверно"
                 })
-
                 if is_correct:
                     st.session_state.score += 1
-
                 st.session_state.show_result = True
-                st.experimental_rerun()
+                st.rerun()
+
         else:
             if st.session_state.last_result:
                 st.success("✅ Верно!")
@@ -119,9 +118,9 @@ if uploaded_file:
                 st.session_state.show_result = False
                 st.session_state.selected_option = None
                 st.session_state.last_result = None
-                st.experimental_rerun()
+                st.rerun()
 
-    # ✅ Завершение
+    # ✅ Завершение этапа
     if current_step >= total_questions and not st.session_state.finished:
         st.session_state.finished = True
         st.success(f"✅ Этап завершён! Правильных ответов: {st.session_state.score} из {total_questions}")
@@ -141,7 +140,7 @@ if uploaded_file:
                 st.session_state.finished = False
                 st.session_state.answers = []
                 st.session_state.current_df = retry_df.reset_index(drop=True)
-                st.experimental_rerun()
+                st.rerun()
         else:
             st.balloons()
             st.success("🎉 Все вопросы пройдены правильно!")
