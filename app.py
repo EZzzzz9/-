@@ -9,7 +9,7 @@ with st.sidebar:
     if st.button("🔁 Начать заново"):
         for key in list(st.session_state.keys()):
             del st.session_state[key]
-        st.experimental_rerun()
+        st.rerun()  # ✅ обновлено
 
 # 🧠 Инициализация session_state
 defaults = {
@@ -48,7 +48,13 @@ if uploaded_file:
 
     if st.session_state.step < len(df):
         row = df.iloc[st.session_state.step]
-        st.markdown(f"### Вопрос {st.session_state.step + 1} из {len(df)}")
+        total = len(df)
+        current = st.session_state.step + 1
+        percent = int((current / total) * 100)
+
+        st.markdown(f"### Вопрос {current} из {total}")
+        st.progress(percent)  # ✅ добавлен прогрессбар
+
         st.markdown(f"**{row['Вопрос']}**")
 
         options = ['A', 'B', 'C', 'D', 'E', 'F']
@@ -81,7 +87,7 @@ if uploaded_file:
                     st.session_state.score += 1
 
                 st.session_state.show_result = True
-                st.experimental_rerun()
+                st.rerun()  # ✅ обновлено
 
         else:
             # Показ результата
@@ -96,7 +102,7 @@ if uploaded_file:
                 st.session_state.show_result = False
                 st.session_state.selected_option = None
                 st.session_state.last_result = None
-                st.experimental_rerun()
+                st.rerun()  # ✅ обновлено
 
     # ✅ Завершение
     if st.session_state.step >= len(df) and not st.session_state.finished:
@@ -120,7 +126,7 @@ if uploaded_file:
                 st.session_state.finished = False
                 st.session_state.answers = []
                 st.session_state.current_df = retry_df.reset_index(drop=True)
-                st.experimental_rerun()
+                st.rerun()  # ✅ обновлено
         else:
             st.balloons()
             st.success("🎉 Все вопросы пройдены правильно!")
