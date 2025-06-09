@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import random
 
 st.set_page_config(page_title="Тест с повтором ошибок", layout="centered")
 st.title("🧠 Тестирование с ручным переходом")
@@ -35,14 +36,14 @@ for key, val in defaults.items():
 # ✅ Обработка Excel-файла
 if xlsx_file:
     try:
-        df_full = pd.read_excel(xlsx_file, sheet_name=0)
+        df_full = pd.read_excel(xlsx_file)
         df_full = df_full.dropna(subset=["Вопрос", "Правильный ответ"])
         st.session_state.full_df = df_full
     except Exception as e:
         st.error(f"Ошибка при чтении Excel-файла: {e}")
         st.stop()
 
-    # 🔍 Если CSV — фильтруем вопросы
+    # Если CSV с ошибками загружен
     if csv_file:
         try:
             df_csv = pd.read_csv(csv_file)
@@ -53,9 +54,14 @@ if xlsx_file:
         except Exception as e:
             st.error(f"Ошибка при чтении CSV: {e}")
             st.stop()
-
-    if st.session_state.current_df is None:
-        st.session_state.current_df = df_full.copy()
+    elif st.session_state.current_df is None:
+        # Только Excel — выбор режима
+        mode = st.radio("Выберите режим теста:", ["Весь тест", "Случайные 80 вопросов"], key="test_mode")
+        if mode == "Случайные 80 вопросов":
+            df_sample = df_full.sample(n=min(80, len(df_full)), random_state=42).reset_index(drop=True)
+            st.session_state.current_df = df_sample
+        else:
+            st.session_state.current_df = df_full.copy()
 
     df = st.session_state.current_df
     total_questions = len(df)
@@ -142,9 +148,14 @@ if xlsx_file:
 
         # 📥 Скачивание ошибок
         if not wrong_df.empty:
-            st.markdown("📎 Чтобы повторно пройти только ошибочные вопросы, загрузите этот файл вместе с Excel-файлом при следующем запуске:")
             csv_bytes = wrong_df.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Скачать ошибки (CSV)", data=csv_bytes, file_name="ошибки.csv", mime="text/csv")
+            st.download_button(
+                "📥 Скачать ошибки (CSV)",
+                data=csv_bytes,
+                file_name="ошибки.csv",
+                mime="text/csv",
+                help="Скачайте и используйте этот файл в поле загрузки CSV при следующем запуске."
+            )
         else:
             st.balloons()
             st.success("🎉 Все вопросы пройдены правильно!")
