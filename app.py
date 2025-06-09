@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from io import StringIO
 
 st.set_page_config(page_title="Тест с повтором ошибок", layout="centered")
 st.title("🧠 Тестирование с ручным переходом")
@@ -10,10 +11,6 @@ if st.button("🔁 Начать заново"):
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
-
-# 📂 Загрузка файлов
-xlsx_file = st.file_uploader("Загрузите Excel-файл с вопросами", type=["xlsx"])
-csv_file = st.file_uploader("🔄 (Необязательно) Загрузите CSV с ошибками", type=["csv"])
 
 # 🧠 Инициализация состояния
 defaults = {
@@ -32,32 +29,44 @@ for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
-# ✅ Обработка Excel-файла
-if xlsx_file:
+# 📂 Загрузка файлов
+uploaded_xlsx = st.file_uploader("📘 Загрузите Excel-файл с вопросами", type=["xlsx"])
+uploaded_csv = st.file_uploader("📄 (опц.) Загрузите CSV с ошибками", type=["csv"])
+
+if uploaded_xlsx:
     try:
-        df_full = pd.read_excel(xlsx_file, sheet_name=0)
+        df_full = pd.read_excel(uploaded_xlsx)
         df_full = df_full.dropna(subset=["Вопрос", "Правильный ответ"])
-        st.session_state.full_df = df_full
+        st.session_state.full_df = df_full.copy()
     except Exception as e:
-        st.error(f"Ошибка при чтении Excel-файла: {e}")
+        st.error(f"Ошибка чтения Excel: {e}")
         st.stop()
 
-    # 🔍 Если CSV — фильтруем вопросы
-    if csv_file:
-        try:
-            df_csv = pd.read_csv(csv_file)
-            df_csv_wrong = df_csv[df_csv["Результат"] == "❌ Неверно"]
-            filtered_df = df_full[df_full["Вопрос"].isin(df_csv_wrong["Вопрос"])].reset_index(drop=True)
-            st.session_state.current_df = filtered_df
-            st.session_state.mode = "retry_csv"
-        except Exception as e:
-            st.error(f"Ошибка при чтении CSV: {e}")
-            st.stop()
+if uploaded_csv and st.session_state.full_df is not None:
+    try:
+        df_errors = pd.read_csv(uploaded_csv)
+        df_errors = df_errors[df_errors["Результат"] == "❌ Неверно"]
 
-    if st.session_state.current_df is None:
-        st.session_state.current_df = df_full.copy()
+        matched = st.session_state.full_df[
+            st.session_state.full_df["Вопрос"].isin(df_errors["Вопрос"])
+        ].reset_index(drop=True)
+        st.session_state.current_df = matched
+        st.session_state.mode = "retry_wrong"
+        st.session_state.step = 0
+        st.session_state.answers = []
+        st.session_state.score = 0
+        st.session_state.finished = False
+        st.session_state.show_result = False
+        st.success("📄 CSV загружен: выбран режим повторных ошибок.")
+    except Exception as e:
+        st.error(f"Ошибка чтения CSV: {e}")
+        st.stop()
+elif st.session_state.current_df is None and st.session_state.full_df is not None:
+    st.session_state.current_df = st.session_state.full_df.copy()
 
-    df = st.session_state.current_df
+# 📊 Основной тест
+df = st.session_state.current_df
+if df is not None and not df.empty:
     total_questions = len(df)
     current_step = st.session_state.step
 
@@ -87,7 +96,7 @@ if xlsx_file:
 
     if current_step < total_questions:
         row = df.iloc[current_step]
-        st.markdown(f"### Вопрос {current_step + 1} из {total_questions}")
+        st.markdown(f"### Вопрос {current_step + 1}")
         st.markdown(f"**{row['Вопрос']}**")
 
         options = ['A', 'B', 'C', 'D', 'E', 'F']
@@ -128,41 +137,50 @@ if xlsx_file:
                 st.rerun()
 
             if st.session_state.last_result:
-                st.markdown("✅ **Верно!**", unsafe_allow_html=True)
+                st.markdown("✅ **Верно!**")
             else:
-                st.markdown(f"❌ **Неверно. Правильный ответ: {correct_answer}**", unsafe_allow_html=True)
+                st.markdown(f"❌ **Неверно. Правильный ответ: {correct_answer}**")
 
-    # ✅ Завершение
     if current_step >= total_questions and not st.session_state.finished:
         st.session_state.finished = True
         st.success(f"✅ Этап завершён! Правильных ответов: {st.session_state.score} из {total_questions}")
 
         wrong_df = pd.DataFrame(st.session_state.answers)
-        wrong_df = wrong_df[wrong_df["Результат"] == "❌ Неверно"]
+        wrong_df = wrong_df[wrong_df["Результат"] != "✅ Верно"]
 
-        # 📥 Скачивание ошибок
         if not wrong_df.empty:
-            csv_bytes = wrong_df.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Скачать ошибки (CSV)", data=csv_bytes, file_name="ошибки.csv", mime="text/csv")
-
+            st.warning(f"⚠️ Остались ошибки: {len(wrong_df)}. Повторить только их?")
             if st.button("🔁 Повторить ошибки"):
                 retry_df = st.session_state.full_df[
                     st.session_state.full_df["Вопрос"].isin(wrong_df["Вопрос"])
                 ].reset_index(drop=True)
 
-                st.session_state.update({
-                    "mode": "retry_wrong",
-                    "current_df": retry_df,
-                    "step": 0,
-                    "score": 0,
-                    "answers": [],
-                    "show_result": False,
-                    "finished": False
-                })
+                # Надёжный сброс состояния
+                for key in ["mode", "current_df", "step", "score", "answers", "show_result", "finished"]:
+                    if key in st.session_state:
+                        del st.session_state[key]
+
+                st.session_state.mode = "retry_wrong"
+                st.session_state.current_df = retry_df
+                st.session_state.step = 0
+                st.session_state.score = 0
+                st.session_state.answers = []
+                st.session_state.show_result = False
+                st.session_state.finished = False
                 st.rerun()
         else:
             st.balloons()
             st.success("🎉 Все вопросы пройдены правильно!")
+
+        # Кнопка для скачивания CSV с ошибками
+        if not wrong_df.empty:
+            csv = wrong_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇️ Скачать ошибки (CSV)",
+                data=csv,
+                file_name="ошибки.csv",
+                mime="text/csv"
+            )
 
     if st.session_state.answers:
         with st.expander("📋 История ответов"):
