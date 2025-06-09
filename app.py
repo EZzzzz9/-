@@ -1,11 +1,10 @@
 import streamlit as st
 import pandas as pd
-import time
 
-st.set_page_config(page_title="Тестирование с повтором ошибок", layout="centered")
-st.title("🧠 Тестирование с автоповтором ошибок")
+st.set_page_config(page_title="Тест с повтором ошибок", layout="centered")
+st.title("🧠 Тестирование с ручным переходом")
 
-# 🔄 Кнопка всегда наверху
+# 🔄 Кнопка сброса состояния
 with st.sidebar:
     if st.button("🔁 Начать заново"):
         for key in list(st.session_state.keys()):
@@ -22,8 +21,6 @@ defaults = {
     "show_result": False,
     "selected_option": None,
     "last_result": None,
-    "response_time": None,
-    "auto_advance_time": None,
     "current_df": None
 }
 for key, val in defaults.items():
@@ -41,10 +38,9 @@ if uploaded_file:
         st.error(f"Ошибка при чтении файла: {e}")
         st.stop()
 
-    with st.expander("🔍 Просмотр загруженных данных"):
+    with st.expander("📄 Просмотр загруженных данных"):
         st.dataframe(df_full)
 
-    # 📄 Начальный df
     if st.session_state.current_df is None:
         st.session_state.current_df = df_full.copy()
 
@@ -52,7 +48,13 @@ if uploaded_file:
 
     if st.session_state.step < len(df):
         row = df.iloc[st.session_state.step]
-        st.markdown(f"### Вопрос {st.session_state.step + 1} из {len(df)}")
+        total = len(df)
+        current = st.session_state.step + 1
+        progress_percent = int(current / total * 100)
+
+        st.markdown(f"### Вопрос {current} из {total}")
+        st.progress(progress_percent)
+
         st.markdown(f"**{row['Вопрос']}**")
 
         options = ['A', 'B', 'C', 'D', 'E', 'F']
@@ -65,7 +67,7 @@ if uploaded_file:
             key=f"q_{st.session_state.mode}_{st.session_state.step}"
         )
 
-        # Ответ
+        # Кнопка: сначала Ответить, потом Следующий
         if not st.session_state.show_result:
             if st.button("Ответить"):
                 st.session_state.selected_option = selected[0]
@@ -85,27 +87,29 @@ if uploaded_file:
                     st.session_state.score += 1
 
                 st.session_state.show_result = True
-                st.session_state.auto_advance_time = time.time()
+                st.experimental_rerun()
 
-        # Результат + автопереход
-        if st.session_state.show_result:
+        else:
+            # Показ результата
             if st.session_state.last_result:
                 st.success("✅ Верно!")
             else:
                 st.error(f"❌ Неверно. Правильный ответ: {correct_answer}")
 
-            if time.time() - st.session_state.auto_advance_time >= 1:
+            # Кнопка "Следующий вопрос"
+            if st.button("Следующий вопрос"):
                 st.session_state.step += 1
                 st.session_state.show_result = False
-                st.session_state.auto_advance_time = None
+                st.session_state.selected_option = None
+                st.session_state.last_result = None
                 st.experimental_rerun()
 
-    # 🏁 Завершение этапа
+    # ✅ Завершение
     if st.session_state.step >= len(df) and not st.session_state.finished:
         st.session_state.finished = True
         st.success(f"✅ Этап завершён! Правильных ответов: {st.session_state.score} из {len(df)}")
 
-        # Фильтруем ошибки
+        # Повтор неправильных
         wrong_df = pd.DataFrame(st.session_state.answers)
         wrong_df = wrong_df[wrong_df["Результат"] != "✅ Верно"]
         wrong_indices = wrong_df["Индекс"].tolist()
@@ -125,13 +129,12 @@ if uploaded_file:
                 st.experimental_rerun()
         else:
             st.balloons()
-            st.success("🎉 Все вопросы пройдены правильно! Повторов не требуется.")
+            st.success("🎉 Все вопросы пройдены правильно!")
 
-    # История
+    # 📊 История
     if st.session_state.answers:
         with st.expander("📋 История ответов"):
             df_result = pd.DataFrame(st.session_state.answers)
             st.dataframe(df_result[["Режим", "Вопрос", "Вы выбрали", "Правильный ответ", "Результат"]])
-
 else:
-    st.info("👆 Загрузите Excel-файл с вопросами, чтобы начать.")
+    st.info("👆 Загрузите Excel-файл с вопросами.")
